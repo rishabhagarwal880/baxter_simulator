@@ -176,23 +176,25 @@ class PickAndPlace(object):
         self._servo_to_pose(pose)
         # close gripper
         self.gripper_close()
-	if cap_status = 1:
+	if cap_status == 1:
             # retract to clear object
             self._retract()
 	else:
 	    #write for error
 	    self._retract()
+    	    print("\nno object was detected...")
 
     def place(self, pose):
         # servo above pose
         self._approach(pose)
         # servo to pose
         self._servo_to_pose(pose)
-	if cap_status = 3:
+	if cap_status == 3:
             # open the gripper
             self.gripper_open()
             self._retract()
 	else:
+    	    print("\nsurface not found... going lower")
 	    #write for going further
         # retract to clear object
         #self._retract()
@@ -295,9 +297,9 @@ def main():
         position=Point(x=0.7, y=0.15, z=-0.129),
         orientation=overhead_orientation))
    
-    # Move a little deeper
+    # Move a little lower
     block_poses.append(Pose(
-        position=Point(x=0.7, y=0.15, z=-0.119),
+        position=Point(x=0.7, y=0.15, z=-0.139),
         orientation=overhead_orientation))
    
     # Move to the desired starting angles
