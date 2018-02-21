@@ -34,6 +34,7 @@ import argparse
 import struct
 import sys
 import copy
+import numpy as np
 
 import rospy
 import rospkg
@@ -51,6 +52,8 @@ from geometry_msgs.msg import (
 from std_msgs.msg import (
     Header,
     Empty,
+    Int32,
+    String,
 )
 
 from baxter_core_msgs.srv import (
@@ -65,6 +68,7 @@ class PickAndPlace(object):
         self._limb_name = limb # string
         self._hover_distance = hover_distance # in meters
         self._verbose = verbose # bool
+	self.cap_status = 1 #int
         self._limb = baxter_interface.Limb(limb)
         self._gripper = baxter_interface.Gripper(limb)
         ns = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
@@ -76,14 +80,15 @@ class PickAndPlace(object):
         self._init_state = self._rs.state().enabled
         print("Enabling robot... ")
         self._rs.enable()
-	self.listener() #initialize listener
+	self.cap_sub = rospy.Subscriber('capflag', Int32, self.callback) #initialize listener
 
 	#callback to read data
     def callback(self, capflag):
-	cap_status=capflag
+	self.cap_status = capflag	
+        #rospy.loginfo("cap_status %s" % (self.cap_status))
 
-    def listener(self):
-	rospy.Subsriber('capflag', String, self.callback)
+   # def listener(self):
+#	rospy.Subscriber('capflag', Int32, self.callback)
 
     def move_to_start(self, start_angles=None):
         print("Moving the {0} arm to start pose...".format(self._limb_name))
@@ -176,20 +181,27 @@ class PickAndPlace(object):
         self._servo_to_pose(pose)
         # close gripper
         self.gripper_close()
-	if cap_status == 1:
+        rospy.loginfo("cap_status %s" % (self.cap_status))
+	rospy.sleep(2.0)
+	if self.cap_status == 3:
             # retract to clear object
             self._retract()
-	else:
-	    #write for error
+    	    print("\nobject detected...")
+	elif self.cap_status == 1:
 	    self._retract()
-    	    print("\nno object was detected...")
+    	    print("\nno object was detected...in stage 1")
+	elif self.cap_status == 0:
+	    self._retract()
+    	    print("\nno object was detected...in stage 0")
 
     def place(self, pose):
         # servo above pose
         self._approach(pose)
         # servo to pose
         self._servo_to_pose(pose)
-	if cap_status == 3:
+	rospy.sleep(2.0)
+        rospy.loginfo("cap_status %s" % (self.cap_status))
+	if self.cap_status == 1:
             # open the gripper
             self.gripper_open()
             self._retract()
@@ -260,12 +272,12 @@ def main():
     # Load Gazebo Models via Spawning Services
     # Note that the models reference is the /world frame
     # and the IK operates with respect to the /base frame
-    load_gazebo_models()
+   # load_gazebo_models()
     # Remove models from the scene on shutdown
-    rospy.on_shutdown(delete_gazebo_models)
+   # rospy.on_shutdown(delete_gazebo_models)
 
-    # Wait for the All Clear from emulator startup
-    rospy.wait_for_message("/robot/sim/started", Empty)
+    #  Wait for the All Clear from emulator startup .... update this for better performance
+   # rospy.wait_for_message("/robot/sim/started", Empty)
 
     limb = 'left'
     hover_distance = 0.35 # meters
@@ -277,6 +289,14 @@ def main():
                              'left_e1': 1.9400238130755056,
                              'left_s0': -0.08000397926829805,
                              'left_s1': -0.9999781166910306}
+   
+   # starting_joint_angles = {'right_w0': -2.6165877289355444,
+   #                          'right_w1': -0.7673738891396782,
+   #                          'right_w2': -1.0565292676560787,
+   #                          'right_e0': -0.37199034106221285,
+   #                          'right_e1': 1.066500142777334,
+   #                          'right_s0': 0.36777189389552795,
+   #                          'right_s1': -0.21705828148578604}
     pnp = PickAndPlace(limb, hover_distance)
     # An orientation for gripper fingers to be overhead and parallel to the obj
     overhead_orientation = Quaternion(
@@ -289,17 +309,17 @@ def main():
     # You may wish to replace these poses with estimates
     # from a perception node.
     block_poses.append(Pose(
-        position=Point(x=0.7, y=0.15, z=-0.129),
+        position=Point(x=0.7, y=0.15, z=-0.209),
         orientation=overhead_orientation))
     # Feel free to add additional desired poses for the object.
     # Each additional pose will get its own pick and place.
     block_poses.append(Pose(
-        position=Point(x=0.7, y=0.15, z=-0.129),
+        position=Point(x=0.7, y=0.15, z=-0.200),
         orientation=overhead_orientation))
    
     # Move a little lower
     block_poses.append(Pose(
-        position=Point(x=0.7, y=0.15, z=-0.139),
+        position=Point(x=0.7, y=0.15, z=-0.223),
         orientation=overhead_orientation))
    
     # Move to the desired starting angles
@@ -307,6 +327,8 @@ def main():
     idx = 0
     print("\nPicking...")
     pnp.pick(block_poses[idx])
+    if pnp.cap_status == 0: 
+        print("\nPicking done...")
     while not rospy.is_shutdown():
        # print("\nPicking...")
        # pnp.pick(block_poses[idx])
