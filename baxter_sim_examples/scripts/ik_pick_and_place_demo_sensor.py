@@ -52,8 +52,9 @@ from geometry_msgs.msg import (
 from std_msgs.msg import (
     Header,
     Empty,
-    Int32,
+    Int64,
     String,
+    Float64,
 )
 
 from baxter_core_msgs.srv import (
@@ -68,7 +69,8 @@ class PickAndPlace(object):
         self._limb_name = limb # string
         self._hover_distance = hover_distance # in meters
         self._verbose = verbose # bool
-	self.cap_status = 1 #int
+	self.cap_status = '1.0' #string
+	self.status = 'working' #string
         self._limb = baxter_interface.Limb(limb)
         self._gripper = baxter_interface.Gripper(limb)
         ns = "ExternalTools/" + limb + "/PositionKinematicsNode/IKService"
@@ -80,12 +82,12 @@ class PickAndPlace(object):
         self._init_state = self._rs.state().enabled
         print("Enabling robot... ")
         self._rs.enable()
-	self.cap_sub = rospy.Subscriber('capflag', Int32, self.callback) #initialize listener
+	self.cap_sub = rospy.Subscriber('capflag', Float64, self.callback) #initialize listener
 
 	#callback to read data
     def callback(self, capflag):
-	self.cap_status = capflag	
-        #rospy.loginfo("cap_status %s" % (self.cap_status))
+	self.cap_status = str(capflag.data)
+       # rospy.loginfo("cap_status %s" % (self.cap_status))
 
    # def listener(self):
 #	rospy.Subscriber('capflag', Int32, self.callback)
@@ -182,28 +184,31 @@ class PickAndPlace(object):
         # close gripper
         self.gripper_close()
         rospy.loginfo("cap_status %s" % (self.cap_status))
-	rospy.sleep(2.0)
-	if self.cap_status == 3:
+	#rospy.sleep(2.0)
+	#print(self.cap_status)
+	if self.cap_status == '0.0':
             # retract to clear object
+    	    print("\nobject detected...grasping the object")
             self._retract()
-    	    print("\nobject detected...")
-	elif self.cap_status == 1:
+	else:
+    	    print("\nno object was detected...")
 	    self._retract()
-    	    print("\nno object was detected...in stage 1")
-	elif self.cap_status == 0:
-	    self._retract()
-    	    print("\nno object was detected...in stage 0")
+	    rospy.signal_shutdown('Exiting the node as no object was detected')
+	#elif self.cap_status == '0.0':
+    	   # print("\nno object was detected...in stage 0")
+	   # self._retract()
 
     def place(self, pose):
         # servo above pose
         self._approach(pose)
-        # servo to pose
+        # servo to pose`
         self._servo_to_pose(pose)
-	rospy.sleep(2.0)
+#	rospy.sleep(2.0)
         rospy.loginfo("cap_status %s" % (self.cap_status))
-	if self.cap_status == 1:
+	if self.cap_status == '0.0':
             # open the gripper
             self.gripper_open()
+	    self.status = 'done'
             self._retract()
 	else:
     	    print("\nsurface not found... going lower")
@@ -268,13 +273,13 @@ def main():
     can improve on this demo by adding perception and feedback to close
     the loop.
     """
-    rospy.init_node("ik_pick_and_place_demo")
+    rospy.init_node("ik_pick_and_place_demo", disable_signals=True)
     # Load Gazebo Models via Spawning Services
     # Note that the models reference is the /world frame
     # and the IK operates with respect to the /base frame
-   # load_gazebo_models()
+    load_gazebo_models()
     # Remove models from the scene on shutdown
-   # rospy.on_shutdown(delete_gazebo_models)
+    rospy.on_shutdown(delete_gazebo_models)
 
     #  Wait for the All Clear from emulator startup .... update this for better performance
    # rospy.wait_for_message("/robot/sim/started", Empty)
@@ -327,16 +332,36 @@ def main():
     idx = 0
     print("\nPicking...")
     pnp.pick(block_poses[idx])
-    if pnp.cap_status == 0: 
+    if (pnp.cap_status == '0.0'): 
         print("\nPicking done...")
-    while not rospy.is_shutdown():
+
+   # print("\nPlacing...")
+   # pnp.place(block_poses[1])
+
+    #while not rospy.is_shutdown():
        # print("\nPicking...")
        # pnp.pick(block_poses[idx])
         print("\nPlacing...")
         idx = idx+1 # % len(block_poses)
 	#rospy.sleep(10.0)
         pnp.place(block_poses[idx])
-    return 0
+
+    if pnp.status == 'working':
+       # print("\nPicking...")
+       # pnp.pick(block_poses[idx])
+        print("\nPlacing...")
+        idx = idx+1 # % len(block_poses)
+	#rospy.sleep(10.0)
+        pnp.place(block_poses[idx])
+   
+    else:
+    	rospy.signal_shutdown('object placed')
+	
+
+
+   # print("\nsurface not found shuting down")
+    rospy.signal_shutdown('surface not found shuting down')
+    #return 0
 
 if __name__ == '__main__':
     sys.exit(main())
